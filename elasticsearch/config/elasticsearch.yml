@@ -1,0 +1,17 @@
+cluster.name: "docker-cluster"
+network.host: 0.0.0.0
+
+# 单节点配置
+discovery.type: single-node
+
+# 安全配置（可选）
+xpack.security.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# 内存配置
+bootstrap.memory_lock: false
+
+# 跨域配置
+http.cors.enabled: true
+http.cors.allow-origin: "*"
+

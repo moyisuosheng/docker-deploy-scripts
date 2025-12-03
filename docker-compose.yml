@@ -1,0 +1,184 @@
+# version: '3'
+
+services:
+  redis:
+    container_name: redis
+    image: redis:7.0.5
+    environment:
+      - REDIS_PASSWORD=yourpassword
+    volumes:
+      - ./redis/data:/data
+    ports:
+      - "6379:6379"
+  # nginx:
+  #   container_name: nginx
+  #   image: nginx
+  #   build:
+  #     context: ./nginx
+  #   ports:
+  #     - "888:888"
+  #   # deploy:
+  #   #   resources:
+  #   #     limits:
+  #   #       #          cpus: '0.50'
+  #   #       memory: 1024M
+  #   volumes:
+  #     - ./nginx/html:/home/imc/projects/imc-ui
+  #     - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf
+  #     - ./nginx/logs:/var/log/nginx
+  #     - ./nginx/conf.d:/etc/nginx/conf.d
+
+  mysql:
+    container_name: mysql
+    image: mysql:latest
+    environment:
+      - MYSQL_ROOT_PASSWORD=123456
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./mysql/conf:/etc/mysql/conf.d
+      - ./mysql/logs:/logs
+      - ./mysql/data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  minio:
+    container_name: minio
+    image: minio/minio
+    build:
+      context: ./minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 512M
+    volumes:
+      - ./minio/data:/data
+      - ./minio/config:/root/.minio/
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      TZ: Asia/Shanghai
+    # command: server --console-address ':9001' /data  #指定容器中的目录 /data
+    command: server --address "0.0.0.0:9000" --console-address "0.0.0.0:9001" /data
+
+  nacos:
+    container_name: nacos
+    image: nacos/nacos-server:latest
+    build:
+      context: ./nacos
+    environment:
+      - MODE=standalone
+      - NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./nacos/logs/:/home/nacos/logs
+      # - ./nacos/conf/application.properties:/home/nacos/conf/application.properties
+    # restart: always
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       #          cpus: '0.50'
+    #       memory: 2048M
+
+
+  zookeeper:
+    container_name: zookeeper
+    image: bitnami/zookeeper:3.9
+    environment:
+      # 如果Zookeeper需要SASL认证需额外配置
+      - ALLOW_ANONYMOUS_LOGIN=yes  
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-net
+
+  kafka:
+    container_name: kafka
+    image: bitnami/kafka:3.6
+    depends_on:
+      - zookeeper
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=SASL_PLAINTEXT:SASL_PLAINTEXT
+      - KAFKA_CFG_LISTENERS=SASL_PLAINTEXT://0.0.0.0:9092
+      # 此处配置docker所在服务器ip
+      - KAFKA_CFG_ADVERTISED_LISTENERS=SASL_PLAINTEXT://host.docker.internal:9092
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=SASL_PLAINTEXT
+      # 修改以下两行配置为SCRAM-SHA-512
+      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=SCRAM-SHA-512
+      - KAFKA_CFG_SASL_ENABLED_MECHANISMS=SCRAM-SHA-512
+      # 添加JAAS配置文件路径
+      # - KAFKA_OPTS=-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./kafka/config/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf
+      - ./kafka/config/client.properties:/etc/kafka/client.properties
+    networks:
+      - kafka-net
+
+  jenkins:
+    container_name: jenkins
+    image: jenkins/jenkins:lts-jdk21
+    # image: docker.io/jenkins/jenkins:latest
+    ports:
+      - '8080:8080'
+      - '50000:50000'
+    tty: true
+    stdin_open: true
+
+  apifox-general-runner:
+    container_name: apifox_general_runner
+    image: registry.cn-hangzhou.aliyuncs.com/apifox/self-hosted-general-runner
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_APP_BASE_URL=https://api.apifox.cn
+      - TEAM_ID=3697390
+      - RUNNER_ID=30142
+      - ACCESS_TOKEN=TSHGR-9e2Xr8r2Y2bKhmj3x_Lgz-BrfUhUViFs
+    volumes:
+      - ./apifox/data:/opt/runner
+    ports:
+      - "4524:4524"
+
+  elasticsearch:
+    image: elasticsearch:9.2.1
+    container_name: elasticsearch
+    environment:
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    volumes:
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - elastic-net
+    # restart: unless-stopped
+
+  kibana:
+    image: kibana:9.2.1
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - elastic-net
+    depends_on:
+      - elasticsearch
+    # restart: unless-stopped
+
+networks:
+  kafka-net:
+    driver: bridge
+  elastic-net:
+    driver: bridge
+
+
