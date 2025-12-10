@@ -1,45 +1,174 @@
 # version: '3'
 
 services:
-  redis:
-    container_name: redis
-    image: redis:7.0.5
-    environment:
-      - REDIS_PASSWORD=yourpassword
-    volumes:
-      - ./redis/data:/data
-    ports:
-      - "6379:6379"
-  # nginx:
-  #   container_name: nginx
-  #   image: nginx
-  #   build:
-  #     context: ./nginx
-  #   ports:
-  #     - "888:888"
-  #   # deploy:
-  #   #   resources:
-  #   #     limits:
-  #   #       #          cpus: '0.50'
-  #   #       memory: 1024M
-  #   volumes:
-  #     - ./nginx/html:/home/imc/projects/imc-ui
-  #     - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf
-  #     - ./nginx/logs:/var/log/nginx
-  #     - ./nginx/conf.d:/etc/nginx/conf.d
-
   mysql:
     container_name: mysql
     image: mysql:latest
     environment:
-      - MYSQL_ROOT_PASSWORD=123456
+      - MYSQL_ROOT_PASSWORD=root
       - TZ=Asia/Shanghai
     volumes:
       - ./mysql/conf:/etc/mysql/conf.d
       - ./mysql/logs:/logs
       - ./mysql/data:/var/lib/mysql
+      # 挂载初始化脚本目录
+      - ./mysql/init-scripts:/docker-entrypoint-initdb.d
     ports:
       - "3306:3306"
+
+  nacos:
+    container_name: nacos
+    image: nacos/nacos-server:v2.5.2
+    build:
+      context: ./nacos
+    environment:
+      - MODE=standalone
+      # ========== token ==========
+      - NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789
+      - TZ=Asia/Shanghai
+      - NACOS_AUTH_ENABLE=true
+      - SPRING_DATASOURCE_PLATFORM=mysql
+      - MYSQL_SERVICE_HOST=mysql
+      - MYSQL_SERVICE_USER=root
+      - MYSQL_SERVICE_PASSWORD=root
+      - MYSQL_SERVICE_DB_NAME=nacos
+      - NACOS_AUTH_IDENTITY_KEY=nacos_auth_key
+      - NACOS_AUTH_IDENTITY_VALUE=nacos_auth_value
+      - MYSQL_SERVICE_DB_PARAM=characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&allowPublicKeyRetrieval=true
+    volumes:
+      - ./nacos/logs/:/home/nacos/logs
+      # 配置MySQL公钥，解决8.0以上版本连接问题
+      - ./nacos/config/mysql_public_key.pem:/home/nacos/conf/mysql_public_key.pem
+      - ./nacos/config/application.properties:/home/nacos/conf/application.properties
+    # restart: always
+    ports:
+      - "8080:8080"
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       #          cpus: '0.50'
+    #       memory: 2048M
+    depends_on:
+      - mysql
+
+  seata:
+    # 建议指定稳定版本
+    image: apache/seata-server:latest
+    container_name: seata
+    hostname: seata
+    # command: sh -c "java -jar /seata-server/seata-server.jar -h 0.0.0.0 -p 8091"
+    ports:
+      # 服务端口
+      - "8091:8091"
+      # 控制台端口 (v1.5.0+)
+      - "7091:7091"
+    environment:
+      # - SPRING_CLOUD_NACOS_DISCOVERY_IP=172.23.80.1
+      # 关键修改：让Seata注册到宿主机能访问的地址
+      - SEATA_IP=172.23.80.1
+      - SEATA_PORT=8091
+      # 存储模式：file(默认) 或 db[citation:1][citation:3]
+      # - STORE_MODE=file
+    volumes:
+      # 挂载自定义配置文件
+      - ./seata/resources/application.yml:/seata-server/resources/application.yml
+      - ./seata/resources/application.yaml:/seata-server/resources/application.yaml
+      # - ./seata/resources/application.example.yml:/seata-server/resources/application.example.yml
+      # - ./seata/resources/application.raft.example.yml:/seata-server/resources/application.raft.example.yml
+    # 健康检查和日志查看
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # restart: unless-stopped
+    depends_on:
+      - mysql
+      - nacos
+
+  redis:
+    container_name: redis
+    image: redis:7.0.5
+    environment:
+      - REDIS_PASSWORD=password
+    volumes:
+      - ./redis/data:/data
+    ports:
+      - "6379:6379"
+
+  mongodb:
+    # 官方MongoDB镜像
+    image: mongo:8.2.2
+    # 容器名称
+    container_name: mongodb
+    # 端口映射：宿主机端口:容器内端口（容器内默认27017）
+    ports:
+      - "27017:27017"
+    # 环境变量（核心：开启认证、设置根账号密码）
+    environment:
+      # 根用户名（自定义）
+      MONGO_INITDB_ROOT_USERNAME: root
+      # 根密码（自定义，建议复杂密码）
+      MONGO_INITDB_ROOT_PASSWORD: root
+      # 认证数据库（默认admin）
+      MONGO_INITDB_DATABASE: admin
+    # 数据持久化：将容器内数据目录映射到宿主机
+    volumes:
+      # 宿主机目录（/data/mongodb）:容器内MongoDB数据目录
+      - ./mongodb/data:/data/db
+      # 可选：初始化脚本目录（如需启动时执行自定义SQL/JS）
+      - ./mongodb/init-scripts:/docker-entrypoint-initdb.d
+    # 可选：资源限制（避免占用过多服务器资源）
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+
+  nginx:
+    container_name: nginx
+    image: nginx
+    ports:
+      - "888:888"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       #          cpus: '0.50'
+    #       memory: 1024M
+    volumes:
+      # 静态页面挂载
+      - ./nginx/html:/home/res/projects/ui
+      # 主配置文件挂载
+      - ./nginx/conf/nginx.conf:/etc/nginx/nginx.conf
+      # 日志挂载
+      - ./nginx/logs:/var/log/nginx
+      # 虚拟主机配置挂载
+      - ./nginx/conf.d:/etc/nginx/conf.d
+
+
+  postgres:
+    image: postgres:18.1  # 指定镜像版本
+    container_name: postgres
+    ports:
+      # 映射主机端口到容器端口
+      - "5432:5432" 
+    environment:
+      TZ: Asia/Shanghai
+      # 可选：自定义用户，默认是 postgres
+      POSTGRES_USER: root
+      # 设置数据库密码
+      POSTGRES_PASSWORD: 123456
+      # 可选：初始化时创建的数据库
+      POSTGRES_DB: my_database  
+    volumes:
+      # 持久化数据
+      - ./postgres/data:/var/lib/postgresql/data
+      # 挂载初始化脚本
+      - ./postgres/init-scripts:/docker-entrypoint-initdb.d
 
   minio:
     container_name: minio
@@ -63,65 +192,61 @@ services:
     # command: server --console-address ':9001' /data  #指定容器中的目录 /data
     command: server --address "0.0.0.0:9000" --console-address "0.0.0.0:9001" /data
 
-  nacos:
-    container_name: nacos
-    image: nacos/nacos-server:latest
-    build:
-      context: ./nacos
+  sentinel:
+    container_name: sentinel
+    image: bladex/sentinel-dashboard:1.8.6
     environment:
-      - MODE=standalone
-      - NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789
+      # JVM 内存配置（按需调整）
+      - JAVA_OPTS=-Xms512m -Xmx512m
+      # 自定义端口（若默认8858冲突，修改此处，同时同步ports映射）
+      # - SERVER_PORT=8080
+      # 可选：修改默认账号密码（1.8.x 支持环境变量配置）
+      - SENTINEL_DASHBOARD_USERNAME=admin
+      - SENTINEL_DASHBOARD_PASSWORD=admin123
+      # 时区配置
       - TZ=Asia/Shanghai
+    ports:
+      # 宿主机端口:容器端口（若修改了SERVER_PORT，右侧同步修改）
+      - "8858:8858"
     volumes:
-      - ./nacos/logs/:/home/nacos/logs
-      # - ./nacos/conf/application.properties:/home/nacos/conf/application.properties
-    # restart: always
-    ports:
-      - "8848:8848"
-      - "9848:9848"
-      - "9849:9849"
-    # deploy:
-    #   resources:
-    #     limits:
-    #       #          cpus: '0.50'
-    #       memory: 2048M
-
-
-  zookeeper:
-    container_name: zookeeper
-    image: bitnami/zookeeper:3.9
-    environment:
-      # 如果Zookeeper需要SASL认证需额外配置
-      - ALLOW_ANONYMOUS_LOGIN=yes  
-    ports:
-      - "2181:2181"
-    networks:
-      - kafka-net
+      # 挂载日志目录（持久化日志，可选）
+      - ./sentinel/logs:/usr/local/sentinel/logs
+    # 网络模式（默认bridge即可，若需和其他服务互通，可自定义网络）
+    # networks:
+    #   - sentinel-network
 
   kafka:
+    image: apache/kafka:4.1.1 
     container_name: kafka
-    image: bitnami/kafka:3.6
-    depends_on:
-      - zookeeper
-    environment:
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=SASL_PLAINTEXT:SASL_PLAINTEXT
-      - KAFKA_CFG_LISTENERS=SASL_PLAINTEXT://0.0.0.0:9092
-      # 此处配置docker所在服务器ip
-      - KAFKA_CFG_ADVERTISED_LISTENERS=SASL_PLAINTEXT://host.docker.internal:9092
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=SASL_PLAINTEXT
-      # 修改以下两行配置为SCRAM-SHA-512
-      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=SCRAM-SHA-512
-      - KAFKA_CFG_SASL_ENABLED_MECHANISMS=SCRAM-SHA-512
-      # 添加JAAS配置文件路径
-      # - KAFKA_OPTS=-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf
     ports:
-      - "9092:9092"
+      # 客户端连接端口
+      - "9092:9092" 
+      # KRaft内部使用
+      - "9093:9093" # 控制器间通信端口
+    environment:
+      # 集群的唯一标识符，可以使用命令生成：./bin/kafka-storage.sh random-uuid
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+      # 节点的唯一ID，单节点设为1
+      KAFKA_NODE_ID: 1
+      # 定义此节点同时承担 broker（处理数据）和 controller（集群管理）角色
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      # 监听器配置，允许来自任何IP的连接
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # 客户端连接到Broker的地址。这里是个关键配置，见下方表格说明
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # 定义监听器使用的安全协议
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      # 指定用于控制器通信的监听器名称
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # 指定控制器仲裁投票者。格式为：节点ID@主机名:端口
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      # 内部 offset 主题的副本因子，单节点必须设为1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # 设置日志（数据）的存储目录
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
-      - ./kafka/config/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf
-      - ./kafka/config/client.properties:/etc/kafka/client.properties
-    networks:
-      - kafka-net
+      # 将数据目录挂载到宿主机，实现数据持久化
+      - ./kafka/data:/var/lib/kafka/data
 
   jenkins:
     container_name: jenkins
@@ -148,37 +273,58 @@ services:
       - "4524:4524"
 
   elasticsearch:
-    image: elasticsearch:9.2.1
+    image: elasticsearch:8.18.8
     container_name: elasticsearch
     environment:
+      # # 单节点模式（必须，否则ES启动失败）
+      # - discovery.type=single-node
+      # # 关闭安全认证（开发环境，避免连接需要密码）
+      # - xpack.security.enabled=false
+      # # 关闭自动注册
+      # - xpack.security.enrollment.enabled=false
       - ES_JAVA_OPTS=-Xms2g -Xmx2g
     volumes:
       - ./elasticsearch/data:/usr/share/elasticsearch/data
       - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      # ik分词器解压缩文件夹需要直接放在 plugins 文件夹下
+      - ./elasticsearch/plugins:/usr/share/elasticsearch/plugins
     ports:
       - "9200:9200"
       - "9300:9300"
-    networks:
-      - elastic-net
     # restart: unless-stopped
 
   kibana:
-    image: kibana:9.2.1
+    image: kibana:8.18.8
     container_name: kibana
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     ports:
       - "5601:5601"
-    networks:
-      - elastic-net
     depends_on:
       - elasticsearch
     # restart: unless-stopped
+
+  elk:
+    image: sebp/elk
+    container_name: elk
+    ports:
+      - "5602:5601"
+      - "9201:9200"
+      - "5044:5044"
+    volumes:
+      - ./elk/elasticsearch/data:/var/lib/elasticsearch
+      - ./elk/logstash/conf.d:/etc/logstash/conf.d
+      - ./elk/logstash/config:/opt/logstash/config
+      - ./elk/kibana/kibana.yml:/opt/kibana/config/kibana.yml
+    environment:
+      - TZ=Asia/Shanghai
+
 
 networks:
   kafka-net:
     driver: bridge
   elastic-net:
     driver: bridge
-
+  nacos-net:
+    driver: bridge
 
