@@ -194,23 +194,25 @@ services:
 
   sentinel:
     container_name: sentinel
-    image: bladex/sentinel-dashboard:1.8.6
+    image: bladex/sentinel-dashboard:1.8.9
     environment:
-      # JVM 内存配置（按需调整）
-      - JAVA_OPTS=-Xms512m -Xmx512m
-      # 自定义端口（若默认8858冲突，修改此处，同时同步ports映射）
-      # - SERVER_PORT=8080
-      # 可选：修改默认账号密码（1.8.x 支持环境变量配置）
-      - SENTINEL_DASHBOARD_USERNAME=admin
-      - SENTINEL_DASHBOARD_PASSWORD=admin123
-      # 时区配置
-      - TZ=Asia/Shanghai
+      # 是否开启登录鉴权，仅用于日常测试，生产上不建议关闭, 默认true
+      auth.enabled: true
+      # 登录控制台的用户名，默认为 sentinel
+      sentinel.dashboard.auth.username: admin
+      # 登录控制台的密码，默认为 sentinel
+      sentinel.dashboard.auth.password: 123456
+      # 用于指定 Spring Boot 服务端 session 的过期时间，如 7200 表示 7200 秒；60m 表示 60 分钟，默认为 30 分钟；
+      server.servlet.session.timeout: 7200
+      # 时区配置（保持不变）
+      TZ: Asia/Shanghai
     ports:
-      # 宿主机端口:容器端口（若修改了SERVER_PORT，右侧同步修改）
+      # 映射端口：主机端口 -> 容器端口 (与-Dserver.port保持一致)
       - "8858:8858"
+      - "8719:8719"
     volumes:
-      # 挂载日志目录（持久化日志，可选）
-      - ./sentinel/logs:/usr/local/sentinel/logs
+      # 挂载日志目录（可选）
+      - ./sentinel/logs:/root/logs/csp/
     # 网络模式（默认bridge即可，若需和其他服务互通，可自定义网络）
     # networks:
     #   - sentinel-network
