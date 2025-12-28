@@ -48,7 +48,7 @@ seata:
     type: nacos
     nacos:
       server-addr: nacos:8848
-      namespace:
+      namespace: dev
       group: SEATA_GROUP
       context-path:
       ##1.The following configuration is for the open source version of Nacos
@@ -59,7 +59,7 @@ seata:
       secret-key: nacos_auth_value
       ##3.The following configuration is used to deploy on Aliyun ECS or ACK without authentication
       #ram-role-name:
-      data-id: seataServer.properties
+      data-id: seata
     consul:
       server-addr: 127.0.0.1:8500
       acl-token:
@@ -101,7 +101,7 @@ seata:
       # server-addr: host.docker.internal:8848
       server-addr: host.docker.internal:8848
       group: SEATA_GROUP
-      namespace:
+      namespace: dev
       cluster: default
       context-path:
       ##1.The following configuration is for the open source version of Nacos

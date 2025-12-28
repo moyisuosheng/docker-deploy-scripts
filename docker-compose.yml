@@ -56,7 +56,7 @@ services:
 
   seata:
     # 建议指定稳定版本
-    image: apache/seata-server:latest
+    image: apache/seata-server:2.5.0.jdk21
     container_name: seata
     hostname: seata
     # command: sh -c "java -jar /seata-server/seata-server.jar -h 0.0.0.0 -p 8091"
